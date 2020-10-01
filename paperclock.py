@@ -34,6 +34,7 @@ import threading
 import waveshare_epd.epd2in7b as epd
 from display import Display
 from openweathermap import OpenWeatherMap, Position
+from intervals import repeating
 
 eInk = epd.EPD()
 
@@ -101,23 +102,21 @@ def redraw_display(clock_display, context):
     show(buffers)
 
 
-def timed_execution(clock_display, context):
-    while True:
-        redraw_display(clock_display, context)
-        s_left = clock_display.refresh_time() - datetime.datetime.now().second
-        time.sleep(s_left)
+@repeating(lambda: 120 - datetime.datetime.now().second)
+def refresh_display(clock_display, context):
+    redraw_display(clock_display, context)
 
 
+@repeating(lambda: 15*60)
 def update_weather(display, context):
-    while True:
-        try:
-            weather = context.openweathermap.query(
-                Position(context.position['lat'], context.position['lon']), context.config.get('units', 'metric'))
-            if weather is not None:
-                display.update_weather(weather)
-        except Exception as ex:
-            print(f'Failed to update weather: {ex}')
-        time.sleep(15 * 60)
+    try:
+        print('getting new forecast')
+        weather = context.openweathermap.query(
+            Position(context.position['lat'], context.position['lon']), context.config.get('units', 'metric'))
+        if weather is not None:
+            display.update_weather(weather)
+    except Exception as ex:
+        print(f'Failed to update weather: {ex}')
 
 
 def post_process_config(config):
@@ -151,6 +150,12 @@ default_config = {
     "time": "24h"
 }
 
+
+def dummy_thread():
+    while True:
+        time.sleep(15)
+
+
 if __name__ == '__main__':
     try:
         config = load_config()
@@ -162,15 +167,7 @@ if __name__ == '__main__':
 
     display = Display(config, context)
 
-    redraw_display(display, context)
+    refresh_display(display, context)
     update_weather(display, context)
 
-    clock_thread = threading.Thread(
-        target=lambda: timed_execution(display, context))
-
-    weather_thread = threading.Thread(
-        target=lambda: update_weather(display, context))
-    # wait till next minute
-    s_left = 60 - datetime.datetime.now().second
-    time.sleep(s_left)
-    clock_thread.start()
+    threading.Thread(target=dummy_thread).start()
