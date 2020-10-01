@@ -117,7 +117,6 @@ def update_weather(display, context):
                 display.update_weather(weather)
         except Exception as ex:
             print(f'Failed to update weather: {ex}')
-            raise ex
         time.sleep(15 * 60)
 
 

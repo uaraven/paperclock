@@ -140,8 +140,7 @@ class OpenWeatherMap:
         return WeatherInfo(response.json())
 
 
-if __name__ == '__main__':
-
-    map = OpenWeatherMap('887daf92380a199c6c3bb477121255b2')
-    weather = map.query(Position(43.631389,  -80.038889))
-    print(weather)
+# Usage
+#
+#    map = OpenWeatherMap('887daf92380a199c6c3bb477121255b2') # not a real API key
+#    weather = map.query(Position(43.631389,  -80.038889))
