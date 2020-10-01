@@ -173,7 +173,7 @@ class AnalogClockDisplay(BaseDisplay):
         br = (pos[0] + width, pos[1] + width)  # bottom right corner
 
         now = datetime.datetime.now()
-        hr_angle = (now.hour + now.minute / 60.0) * 15.0 + 90
+        hr_angle = (now.hour % 12 + now.minute / 60.0) * 30.0 - 90
         min_angle = now.minute * 6 - 90
 
         hr_x = radius*0.6 * \
