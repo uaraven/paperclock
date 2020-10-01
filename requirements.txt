@@ -3,3 +3,4 @@ pillow
 pytz
 astral
 python-dateutil
+requests
