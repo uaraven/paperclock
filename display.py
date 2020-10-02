@@ -30,7 +30,7 @@ from astral.sun import sun
 
 from settings import Settings
 from resources import Resources
-from openweathermap import WeatherInfo
+from openweathermap import WeatherInfo, wind_direction_to_compass
 
 import waveshare_epd.epd2in7b as epd
 
@@ -149,19 +149,63 @@ class WeatherDisplay(BaseDisplay):
     def update_weather(self, weather_info: WeatherInfo):
         self.weather_info = weather_info
 
+    def draw_hourly_pop(self, pos, width, height):
+        if self.weather_info is None:
+            return
+        hourly_pop = [
+            m.pop*100 for m in self.weather_info.hourly][0:8]
+        max_p = max(hourly_pop)
+        if max_p > 0:
+            scale_y = height / max_p
+            scale_x = math.trunc(width / len(hourly_pop))
+
+            bottom = pos[1] + height
+            x = 0
+            for m in hourly_pop:
+                self.buffers[self.BLACK].rectangle(
+                    [(pos[0] + x, int(bottom - m*scale_y)), (pos[0] + x + scale_x - 5, bottom)], fill=0, outline=0)
+                x += scale_x
+            self.buffers[self.RED].line([(pos[0], pos[1]), (x, pos[1])])
+
+    def draw_wind(self, pos, width):
+        if self.weather_info is None:
+            return
+        current = self.weather_info.current
+        speed = round(current.wind_speed * 3.6, 1)  # m/s -> km/h
+        wind = self.res.icon('weather/wind')
+        wind = wind.rotate(current.wind_direction, fillcolor=1)
+
+        icon_offset_x = (width - wind.width) // 2
+
+        self.draw_image((pos[0] + icon_offset_x, pos[1]), wind, self.RED)
+        self.draw_text_centered((pos[0], pos[1] + 30), width, wind_direction_to_compass(
+            current.wind_direction), self.res.tiny_font, self.BLACK)
+        self.draw_text_centered(
+            (pos[0], pos[1] + 50), width, str(speed), self.res.tiny_font, self.BLACK)
+
     def draw_current_weather(self, pos, width):
         if self.weather_info is not None:
             icon = self.res.icon(
                 f'weather/{self.weather_info.current.weather[0].icon}')
             self.draw_image(pos, icon, self.RED)
-            self.draw_text((pos[0], pos[1] + 30),
-                           self.weather_info.current.weather[0].description, self.res.med_font, self.BLACK)
-            self.draw_text((pos[0] + 40, pos[1]),
-                           str(self.weather_info.current.temperature) + "ºC", self.res.larger_font, self.BLACK)
+            # current weather
+            self.draw_text((pos[0] + 70, pos[1] + 22),
+                           self.weather_info.current.weather[0].description, self.res.tiny_font, self.BLACK)
+            # current temperature
+            self.draw_text((pos[0] + 70, pos[1] - 5),
+                           f'{self.weather_info.current.temperature} ºC',
+                           self.res.larger_font, self.BLACK)
+
+            # precipitation minutely - 15 pixels for graph
+            self.draw_hourly_pop(
+                (0, self.screen_size[1] - 15), self.screen_size[0] - 65, 15)
+
+            # wind
+            self.draw_wind((self.screen_size[0] - 65, pos[1]), 65)
 
     def draw_weather_data(self, buffers):
         self.buffers = buffers
-        self.draw_current_weather((5, 100), self.screen_size[1])
+        self.draw_current_weather((5, 99), self.screen_size[1])
 
 
 class DigitalClockDisplay(BaseDisplay):
@@ -269,17 +313,18 @@ class Display:
         self.weather_display = WeatherDisplay(
             self.settings, self.resources, self.screen_size)
 
-    def _draw_digital_frame(self):
+    def _draw_digital_frame(self, buffers):
         pass
 
-    def _draw_analog_frame(self):
-        pass
+    def _draw_analog_frame(self, buffers):
+        buffers[0].line(
+            [(10, 95), (self.screen_size[0] - 10, 97)])
 
-    def _draw_frames(self):
+    def _draw_frames(self, buffers):
         if self.digital:
-            self._draw_digital_frame()
+            self._draw_digital_frame(buffers)
         else:
-            self._draw_analog_frame()
+            self._draw_analog_frame(buffers)
 
     def _make_buffers(self):
         blackimage = Image.new('1', self.screen_size, 255)
@@ -300,7 +345,7 @@ class Display:
         self.time_display.draw_time_data(buffers)
         if self.weather_display is not None:
             self.weather_display.draw_weather_data(buffers)
-        self._draw_frames()
+        self._draw_frames(buffers)
 
         self.eInk.init()
         self.eInk.display(self.eInk.getbuffer(

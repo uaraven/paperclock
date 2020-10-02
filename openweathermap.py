@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import math
 import requests
 import datetime
 
@@ -64,7 +65,7 @@ class DailyForecast:
         self.dew_point = get_s('dew_point', json)
         self.uvi = get_s('uvi', json)
         self.clouds = json['clouds']
-        self.visibility = json['visibility']
+        self.visibility = get_s('visibility', json)
         self.wind_speed = json['wind_speed']
         self.wind_direction = json['wind_deg']
         self.wind_gust = json['wind_gust'] if 'wind_gust' in json else None
@@ -98,13 +99,11 @@ class WeatherDataPoint:
         self.wind_speed = json['wind_speed']
         self.wind_direction = json['wind_deg']
         self.wind_gust = get_s('wind_gust', json)
-        self.rain = get_s('rain', json)
+        if 'rain' in json:
+            self.rain = json['rain']['1h']
         self.pop = get_s('pop', json)
 
         self.weather = [Weather(w) for w in get_s('weather', json, [])]
-        self.hourly = [WeatherDataPoint(h) for h in get_s('hourly', json, [])]
-        self.daily = [DailyForecast(d) for d in get_s('daily', json, [])]
-        self.alerts = [Alert(a)for a in get_s('alerts', json, [])]
 
 
 class WeatherInfo:
@@ -112,7 +111,19 @@ class WeatherInfo:
         current = json['current']
         self.current = WeatherDataPoint(current)
         self.minutely_precipitation = [
-            MinutelyPrecipitation(m) for m in json['minutely']]
+            MinutelyPrecipitation(m) for m in get_s('minutely', json, [])]
+        self.hourly = [WeatherDataPoint(h) for h in get_s('hourly', json, [])]
+        self.daily = [DailyForecast(d) for d in get_s('daily', json, [])]
+        self.alerts = [Alert(a)for a in get_s('alerts', json, [])]
+
+
+_compass = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE",
+            "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+
+
+def wind_direction_to_compass(direction: int) -> str:
+    dir = math.trunc((direction / 22.5) + 0.5)
+    return _compass[dir % 16]
 
 
 class OpenWeatherMap:

@@ -28,6 +28,8 @@ from gpiozero import Button
 import time
 import datetime
 import threading
+import traceback
+
 from display import Display
 from openweathermap import OpenWeatherMap, Position
 from intervals import repeating
@@ -37,14 +39,7 @@ def redraw_display(display):
     """Draws display"""
     display.show()
 
-
-@repeating(lambda: 120 - datetime.datetime.now().second)
-def refresh_display(display):
-    redraw_display(display)
-
-
-@repeating(lambda: 15*60)
-def update_weather(display, openweathermap, settings):
+def get_forecast(display, openweathermap, settings):
     try:
         print('getting new forecast')
         weather = openweathermap.query(
@@ -53,6 +48,17 @@ def update_weather(display, openweathermap, settings):
             display.update_weather(weather)
     except Exception as ex:
         print(f'Failed to update weather: {ex}')
+        traceback.print_exc(ex)
+
+
+@repeating(lambda: 120 - datetime.datetime.now().second)
+def refresh_display(display):
+    redraw_display(display)
+
+
+@repeating(lambda: 15*60)
+def update_weather(display, openweathermap, settings):
+    get_forecast(display, openweathermap, settings)
 
 
 def dummy_thread():
@@ -67,6 +73,7 @@ if __name__ == '__main__':
     display = Display(settings)
     weather = OpenWeatherMap(
         settings.openweathermap_api_key) if settings.openweathermap_api_key is not None else None
+    get_forecast(display, weather, settings)
 
     refresh_display(display)
     update_weather(display, weather, settings)

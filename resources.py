@@ -33,7 +33,7 @@ class Resources:
             font='data/OpenSans-SemiBold.ttf', size=14)
 
         self.larger_font = ImageFont.FreeTypeFont(
-            font='data/OpenSans-Bold.ttf', size=30)
+            font='data/OpenSans-Bold.ttf', size=25)
 
         # Icons
         self.sunrise = Image.open(
