@@ -234,16 +234,20 @@ class Display:
         self.time_display.draw_time_data(buffers)
         if self.weather_display is not None:
             self.weather_display.draw_weather_data(buffers)
-        self.draw_frames()
+        self.draw_frames(buffers)
 
-    def draw_digital_frame(self):
+    def draw_digital_frame(self, buffers):
         pass
 
-    def draw_analog_frame(self):
-        pass
+    def draw_analog_frame(self, buffers):
+        horz = 100
+        buffers[self.context.RED].line(
+            [(105, 0), (105, horz)])
+        buffers[self.context.RED].line(
+            [(0, horz), (self.context.width, horz)])
 
-    def draw_frames(self):
+    def draw_frames(self, buffers):
         if self.digital:
-            self.draw_digital_frame()
+            self.draw_digital_frame(buffers)
         else:
-            self.draw_analog_frame()
+            self.draw_analog_frame(buffers)
