@@ -22,123 +22,37 @@
 # SOFTWARE.
 
 
-from PIL import ImageFont, Image, ImageDraw
+from settings import Settings
 from gpiozero import Button
-from astral.geocoder import lookup, database
+
 import time
 import datetime
-import json
-import os
 import threading
 from display import Display
 from openweathermap import OpenWeatherMap, Position
 from intervals import repeating
 
 
-time_formats = {'24h': '%H:%M', '12h': '%I:%M'}
-
-
-class Context:
-    # Buffers
-    BLACK = 0
-    RED = 1
-
-    def __init__(self, eInk, config):
-        self.config = config
-        # horizontal display
-        self.width = eInk.height
-        self.height = eInk.width
-        # Fonts
-        self.big_font = ImageFont.FreeTypeFont(
-            font='data/OpenSans-Bold.ttf', size=50)
-        self.med_font = ImageFont.FreeTypeFont(
-            font='data/OpenSans-SemiBold.ttf', size=20)
-        self.small_font = ImageFont.FreeTypeFont(
-            font='data/OpenSans-SemiBold.ttf', size=18)
-        self.tiny_font = ImageFont.FreeTypeFont(
-            font='data/OpenSans-SemiBold.ttf', size=14)
-
-        # Icons
-        self.sunrise = Image.open(
-            'data/sunrise.png').convert(mode='1', dither=None)
-        self.sunset = Image.open(
-            'data/sunset.png').convert(mode='1', dither=None)
-
-        # Date and time formats
-        self.position = config['position']
-        self.time_format = time_formats[config['time']
-                                        ] if config['time'] in time_formats else time_formats['24h']
-        self.time_format_tz = self.time_format + ' %Z'
-        self.date_format = '%b %d, %Y'
-
-        self.openweathermap = OpenWeatherMap(
-            config.get('openweathermap_api_key', None))
-
-
-
-
-def show(buffers):
-    eInk.init()
-    eInk.display(eInk.getbuffer(
-        buffers[2]), eInk.getbuffer(buffers[3]))
-    eInk.sleep()
-
-
-def redraw_display(clock_display, context):
+def redraw_display(display):
     """Draws display"""
-    buffers = make_buffers()
-    clock_display.draw_display(buffers)
-
-    show(buffers)
+    display.show()
 
 
 @repeating(lambda: 120 - datetime.datetime.now().second)
-def refresh_display(clock_display, context):
-    redraw_display(clock_display, context)
+def refresh_display(display):
+    redraw_display(display)
 
 
 @repeating(lambda: 15*60)
-def update_weather(display, context):
+def update_weather(display, openweathermap, settings):
     try:
         print('getting new forecast')
-        weather = context.openweathermap.query(
-            Position(context.position['lat'], context.position['lon']), context.config.get('units', 'metric'))
+        weather = openweathermap.query(
+            Position(settings.position['lat'], settings.position['lon']), settings.get('units', 'metric'))
         if weather is not None:
             display.update_weather(weather)
     except Exception as ex:
         print(f'Failed to update weather: {ex}')
-
-
-def post_process_config(config):
-    if isinstance(config['location'], str):
-        location = lookup(config['location'], database())
-        position = {"lat": location.latitude, "lon": location.longitude}
-    else:
-        position = config['location']
-    config['position'] = position
-    return config
-
-
-def load_config():
-    if os.path.isfile('config.json'):
-        name = 'config.json'
-    else:
-        name = os.path.join(os.environ.get('HOME'), '.paperclock')
-    with open(name) as config:
-        cnf = json.load(config)
-        return post_process_config(cnf)
-
-
-default_config = {
-    "location": {
-        'lat': 0.0,
-        'lon': 0.0
-    },
-    "secondTZ": "UTC",
-    "openweathermap_api_key": None,
-    "units": "metric",
-    "time": "24h"
-}
 
 
 def dummy_thread():
@@ -147,17 +61,14 @@ def dummy_thread():
 
 
 if __name__ == '__main__':
-    try:
-        config = load_config()
-    except Exception as ex:
-        print(f'Using default config: {ex}')
-        config = default_config
 
-    context = Context(eInk, config)
+    settings = Settings()
 
-    display = Display(config, context)
+    display = Display(settings)
+    weather = OpenWeatherMap(
+        settings.openweathermap_api_key) if settings.openweathermap_api_key is not None else None
 
-    refresh_display(display, context)
-    update_weather(display, context)
+    refresh_display(display)
+    update_weather(display, weather, settings)
 
-    threading.Thread(target=dummy_thread).start()
+    threading.Thread(target=dummy_thread).start()  # keep app alive

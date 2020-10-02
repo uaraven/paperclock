@@ -32,8 +32,18 @@ class Resources:
         self.tiny_font = ImageFont.FreeTypeFont(
             font='data/OpenSans-SemiBold.ttf', size=14)
 
+        self.larger_font = ImageFont.FreeTypeFont(
+            font='data/OpenSans-Bold.ttf', size=30)
+
         # Icons
         self.sunrise = Image.open(
             'data/sunrise.png').convert(mode='1', dither=None)
         self.sunset = Image.open(
             'data/sunset.png').convert(mode='1', dither=None)
+
+        self.icons = {}
+
+    def icon(self, name: str) -> Image:
+        if name not in self.icons:
+            self.icons[name] = Image.open(f'data/{name}.png').convert(mode='1')
+        return self.icons[name]
