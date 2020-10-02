@@ -24,19 +24,16 @@
 
 from PIL import ImageFont, Image, ImageDraw
 from gpiozero import Button
-from astral import Observer
 from astral.geocoder import lookup, database
 import time
 import datetime
 import json
 import os
 import threading
-import waveshare_epd.epd2in7b as epd
 from display import Display
 from openweathermap import OpenWeatherMap, Position
 from intervals import repeating
 
-eInk = epd.EPD()
 
 time_formats = {'24h': '%H:%M', '12h': '%I:%M'}
 
@@ -78,13 +75,6 @@ class Context:
             config.get('openweathermap_api_key', None))
 
 
-def make_buffers():
-    blackimage = Image.new('1', (eInk.height, eInk.width), 255)
-    redimage = Image.new('1', (eInk.height, eInk.width), 255)
-    drawblack = ImageDraw.Draw(blackimage)
-    drawred = ImageDraw.Draw(redimage)
-
-    return (drawblack, drawred, blackimage, redimage)
 
 
 def show(buffers):

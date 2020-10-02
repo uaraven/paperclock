@@ -18,13 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import time
+import waveshare_epd.epd2in7b as epd
+from PIL import Image, ImageDraw
 import datetime
 from pytz import timezone
 from dateutil.tz import tzlocal
-from PIL import Image, ImageDraw, ImageFont
-from astral import Observer
-from astral.geocoder import lookup, database
 from astral.sun import sun
 import math
 
@@ -218,6 +216,7 @@ class AnalogClockDisplay(BaseDisplay):
 
 class Display:
     def __init__(self, config, context):
+        self.eInk = epd.EPD()
         self.config = config
         self.context = context
         self.digital = 'mode' in self.config and self.config['mode'] == 'digital'
@@ -226,28 +225,40 @@ class Display:
             config, context) if self.digital else AnalogClockDisplay(config, context)
         self.weather_display = None
 
+    def _draw_digital_frame(self):
+        pass
+
+    def _draw_analog_frame(self):
+        pass
+
+    def _draw_frames(self):
+        if self.digital:
+            self._draw_digital_frame()
+        else:
+            self._draw_analog_frame()
+
+    def _make_buffers(self):
+        blackimage = Image.new('1', (eInk.height, eInk.width), 255)
+        redimage = Image.new('1', (eInk.height, eInk.width), 255)
+        drawblack = ImageDraw.Draw(blackimage)
+        drawred = ImageDraw.Draw(redimage)
+
+        return (drawblack, drawred, blackimage, redimage)
+
     def update_weather(self, weather):
         if self.weather_display is not None:
             self.weather_display.update_weather(weather)
 
-    def draw_display(self, buffers):
+    def show(self):
+        """Draw the screen and show it on the e-ink display"""
+
+        buffers = self._make_buffers()
         self.time_display.draw_time_data(buffers)
         if self.weather_display is not None:
             self.weather_display.draw_weather_data(buffers)
-        self.draw_frames(buffers)
+        self._draw_frames()
 
-    def draw_digital_frame(self, buffers):
-        pass
-
-    def draw_analog_frame(self, buffers):
-        horz = 100
-        buffers[self.context.RED].line(
-            [(105, 0), (105, horz)])
-        buffers[self.context.RED].line(
-            [(0, horz), (self.context.width, horz)])
-
-    def draw_frames(self, buffers):
-        if self.digital:
-            self.draw_digital_frame(buffers)
-        else:
-            self.draw_analog_frame(buffers)
+        self.eInk.init()
+        self.eInk.display(self.eInk.getbuffer(
+            buffers[2]), self.eInk.getbuffer(buffers[3]))
+        self.eInk.sleep()
