@@ -34,7 +34,6 @@ from display import Display
 from openweathermap import OpenWeatherMap, Position
 from intervals import repeating
 
-
 def redraw_display(display):
     """Draws display"""
     display.show()
