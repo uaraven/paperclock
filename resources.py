@@ -30,7 +30,7 @@ class Resources:
         self.small_font = ImageFont.FreeTypeFont(
             font='data/OpenSans-SemiBold.ttf', size=18)
         self.tiny_font = ImageFont.FreeTypeFont(
-            font='data/OpenSans-SemiBold.ttf', size=14)
+            font='data/OpenSans-Bold.ttf', size=14)
 
         self.larger_font = ImageFont.FreeTypeFont(
             font='data/OpenSans-Bold.ttf', size=25)

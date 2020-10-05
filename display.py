@@ -22,7 +22,7 @@ import math
 import datetime
 from pytz import timezone
 from dateutil.tz import tzlocal
-from typing import Tuple
+from threading import Timer
 
 from astral import Observer
 from PIL import Image, ImageDraw
@@ -47,14 +47,13 @@ class Display:
         self.settings = settings
         self.eInk = epd.EPD()
 
-        self.resources = Resources()
-
         self.settings = settings
         self.digital = self.settings.mode == 'digital'
 
         # horizontal display, so switch width and height
         self.screen_size = (self.eInk.height, self.eInk.width)
 
+        self.last_refresh_start = datetime.datetime.fromtimestamp(0)
         self.buffers = []
 
     def width(self):
@@ -87,6 +86,10 @@ class Display:
     def draw_image(self, xy, image, buffer_id=0):
         self.buffers[buffer_id + 2].paste(image, xy)
 
+    def draw_image_centered(self, xy, width, image, buffer_id=0):
+        dx = xy[0] + (width - image.width)//2
+        self.buffers[buffer_id + 2].paste(image, (dx, xy[1]))
+
     def draw_icon_text_centered(self, pos, width, image, text, font, image_buffer_id, text_buffer_id):
         # 2px between image and text
         total_w = image.width + \
@@ -111,37 +114,57 @@ class Display:
     def ellipse(self, tl, br, color, fill=0, outline=0, width=1):
         self.buffers[color].ellipse([tl, br], fill, outline, width)
 
-    def new_frame(self):
+    def new_screen(self):
         """Initialize buffers for the new frame"""
         blackimage = Image.new('1', self.screen_size, 255)
         redimage = Image.new('1', self.screen_size, 255)
         drawblack = ImageDraw.Draw(blackimage)
         drawred = ImageDraw.Draw(redimage)
 
-        return (drawblack, drawred, blackimage, redimage)
+        self.buffers = (drawblack, drawred, blackimage, redimage)
+        return self.buffers
 
     def show(self):
         """Draw the screen and show it on the e-ink display"""
+        now = datetime.datetime.now()
+        if (now - self.last_refresh_start) > datetime.timedelta(seconds=25):
+            self.last_refresh_start = now
+            self.eInk.init()
+            self.eInk.display(self.eInk.getbuffer(
+                self.buffers[2]), self.eInk.getbuffer(self.buffers[3]))
+            self.eInk.sleep()
+            return True
+        else:
+            print("display is refreshing, ignoring refresh")
+            return False
 
-        buffers = self._make_buffers()
-        self.time_display.draw_time_data(buffers)
-        if self.weather_display is not None:
-            self.weather_display.draw_weather_data(buffers)
-        self._draw_frames(buffers)
 
-        self.eInk.init()
-        self.eInk.display(self.eInk.getbuffer(
-            buffers[2]), self.eInk.getbuffer(buffers[3]))
-        self.eInk.sleep()
+class Weather:
+    DEFAULT = 0
+    CURRENT_DETAILS = 1
 
-
-class WeatherRepr():
-    def __init__(self, display: Display):
+    def __init__(self, display: Display, resources: Resources):
         self.display = display
         self.weather_info = None
+        self.res = resources
+        self.state = self.DEFAULT
+        self.state_timer = None
 
-    def update_weather(self, weather_info: WeatherInfo):
+    def update(self, weather_info: WeatherInfo):
         self.weather_info = weather_info
+
+    def set_state(self, new_state):
+        print(f'state change, current: {self.state}, new: {new_state}')
+        if self.state == new_state:
+            return
+        if self.state_timer is not None:
+            self.state_timer.cancel()
+            self.state_time = None
+        self.state = new_state
+        if self.state != self.DEFAULT:
+            print('setting timer to 25 seconds')
+            self.state_timer = Timer(
+                25, lambda: self.set_state(self.DEFAULT)).start()
 
     def draw_hourly_pop(self, pos, width, height):
         if self.weather_info is None:
@@ -170,38 +193,70 @@ class WeatherRepr():
         icon_offset_x = (width - wind.width) // 2
 
         self.display.draw_image(
-            (pos[0] + icon_offset_x, pos[1]), wind, self.RED)
+            (pos[0] + icon_offset_x, pos[1]), wind, self.display.RED)
         self.display.draw_text_centered((pos[0], pos[1] + 30), width, wind_direction_to_compass(
-            current.wind_direction), self.res.tiny_font, self.BLACK)
+            current.wind_direction), self.res.tiny_font, self.display.BLACK)
         self.display.draw_text_centered(
-            (pos[0], pos[1] + 50), width, str(speed), self.res.tiny_font, self.BLACK)
+            (pos[0], pos[1] + 50), width, str(speed), self.res.tiny_font, self.display.BLACK)
 
-    def draw_current_weather(self, pos, width):
+    def draw_current_weather(self):
+        pos = (5, 99)
         if self.weather_info is not None:
             icon = self.res.icon(
                 f'weather/{self.weather_info.current.weather[0].icon}')
-            self.draw_image(pos, icon, self.RED)
+            self.display.draw_image(pos, icon, self.display.RED)
             # current weather
-            self.draw_text((pos[0] + 70, pos[1] + 22),
-                           self.weather_info.current.weather[0].description, self.res.tiny_font, self.BLACK)
+            self.display.draw_text((pos[0] + 70, pos[1] + 22),
+                                   self.weather_info.current.weather[0].description, self.res.tiny_font, self.display.BLACK)
             # current temperature
-            self.draw_text((pos[0] + 70, pos[1] - 5),
-                           f'{self.weather_info.current.temperature} ºC',
-                           self.res.larger_font, self.BLACK)
+            self.display.draw_text((pos[0] + 70, pos[1] - 5),
+                                   f'{self.weather_info.current.temperature} º',
+                                   self.res.larger_font, self.display.BLACK)
 
             # precipitation minutely - 15 pixels for graph
             self.draw_hourly_pop(
-                (0, self.screen_size[1] - 15), self.screen_size[0] - 65, 15)
+                (0, self.display.screen_size[1] - 15), self.display.screen_size[0] - 65, 15)
 
             # wind
-            self.draw_wind((self.screen_size[0] - 65, pos[1]), 65)
+            self.draw_wind((self.display.screen_size[0] - 65, pos[1]), 65)
 
-    def draw_weather_data(self, bounds):
-        #(5, 99)
-        self.draw_current_weather(bounds[0], bounds[1][0])
+    def draw_weather_data(self):
+        if self.state == self.DEFAULT:
+            self.draw_current_weather()
+        else:
+            self.draw_current_details()
+
+    def draw_current_details(self):
+        if self.weather_info is not None:
+            icon = self.res.icon(
+                f'weather/{self.weather_info.current.weather[0].icon}')
+            self.display.draw_image_centered(
+                (0, 0), self.display.width() // 2, icon,  self.display.RED)
+            # current weather
+            self.display.draw_text((3, 50),
+                                   self.weather_info.current.weather[0].description, self.res.med_font, self.display.BLACK)
+            # current temperature
+
+            self.display.draw_text((self.display.screen_size[0] // 2, 0),
+                                   f'{self.weather_info.current.temperature}º',
+                                   self.res.larger_font, self.display.BLACK)
+
+            self.display.draw_text((self.display.screen_size[0] // 2, 25),
+                                   f'{self.weather_info.current.feels_like}º',
+                                   self.res.larger_font, self.display.RED)
+
+            self.display.draw_text((3, 80),
+                                   f'Humidity: {self.weather_info.current.humidity}%', self.res.med_font, self.display.BLACK)
+            self.display.draw_text((3, 100), f'Pressure: {self.weather_info.current.pressure}hPa',
+                                   self.res.med_font, self.display.BLACK)
+            self.display.draw_text((3, 120), f'UV Index: {self.weather_info.current.uvi}',
+                                   self.res.med_font, self.display.BLACK)
 
 
-class ClockRepr:
+class Clock:
+    CLOCK_FACE = 90
+    OFFSET = 5
+
     def __init__(self, display: Display, resources: Resources, settings: Settings) -> None:
         self.display = display
         self.settings = settings
@@ -255,38 +310,6 @@ class ClockRepr:
             self.display.draw_text_centered(pos, width, date,
                                             self.res.med_font, self.display.BLACK)
 
-
-class DigitalClockRepr(ClockRepr):
-    LARGE_CLOCK_BOTTOM = 72
-    SECONDARY_START = 95
-
-    def __init__(self, display: Display, resources: Resources, settings: Settings):
-        super().__init__(display, resources, settings)
-
-    def draw_current_time(self, top_left, width):
-        now = datetime.datetime.now()
-        time = now.strftime(self.settings.time_format)
-        self.display.draw_text_centered(top_left, width, time,
-                                        self.display.res.big_font, self.display.BLACK)
-
-        self.draw_current_date((0, 40), self.width())
-
-    # bounds (0, -10) - (width, 80)
-    def draw_time_data(self, bounds):
-        """Draws time-related information: current time/date, second TZ time/date, sunrise, sunset times"""
-        self.draw_current_time(bounds[0], bounds[1][0])
-        self.draw_sun((0, self.LARGE_CLOCK_BOTTOM), self.width())
-        self.draw_current_time_other_tz(
-            (0, self.SECONDARY_START), self.width() // 2)
-
-
-class AnalogClockDisplay(ClockRepr):
-    CLOCK_FACE = 90
-    OFFSET = 5
-
-    def __init__(self, display: Display, resources: Resources, settings: Settings):
-        super().__init__(settings, display, resources, settings)
-
     def draw_analog_time(self, pos, width):
         radius = width / 2
         center = (pos[0] + radius, pos[1] + radius)
@@ -316,20 +339,21 @@ class AnalogClockDisplay(ClockRepr):
         self.display.line(center, (min_x, min_y),
                           self.display.BLACK, fill=0, width=2)
         # digital time
-        self.draw_text_centered((pos[0], pos[1] + width - 25), width, now.strftime(self.settings.time_format),
-                                self.res.tiny_font, self.RED)
+        self.display.draw_text_centered((pos[0], pos[1] + width - 25), width, now.strftime(self.settings.time_format),
+                                        self.res.tiny_font, self.display.RED)
 
     def draw_time_data(self):
         """Draws time-related information: current time/date, second TZ time/date, sunrise, sunset times"""
 
         clock_bound = self.OFFSET + self.CLOCK_FACE
 
-        self.draw_analog_time((self.OFFSET, self.OFFSET), self.CLOCK_FACE)
+        self.draw_analog_time(
+            (self.OFFSET, self.OFFSET), self.CLOCK_FACE)
         self.draw_current_date(
-            (clock_bound, 0), self.width() - clock_bound)
-        self.draw_sun((clock_bound, 30), self.width() - clock_bound)
+            (clock_bound, 0), self.display.width() - clock_bound)
+        self.draw_sun((clock_bound, 30), self.display.width() - clock_bound)
         self.draw_current_time_other_tz(
-            (clock_bound, 50), self.width() - clock_bound, font=self.res.tiny_font, vertical=False)
+            (clock_bound, 50), self.display.width() - clock_bound, font=self.res.tiny_font, vertical=False)
 
 
 class Layout:
@@ -337,24 +361,22 @@ class Layout:
        Layout is also responsible for drawing borders
     """
 
-    def __init__(self, display: Display, weather: WeatherRepr, clock: ClockRepr, calendar: CalendarRepr) -> None:
+    def __init__(self, display: Display, settings: Settings) -> None:
         self.display = display
-        self.weather = weather
-        self.clock = clock
-        self.calendar = calendar
+        self.settings = settings
+        self.resources = Resources()
+        self.weather = Weather(display, self.resources)
+        self.clock = Clock(self.display, self.resources, settings)
 
     def draw(self):
         self.display.new_screen()
+        self._draw_frame()
+        if (self.weather.state == self.weather.DEFAULT):
+            self.clock.draw_time_data()
+        self.weather.draw_weather_data()
+        self.display.show()
 
-    def _draw_digital_frame(self, buffers):
-        pass
-
-    def _draw_analog_frame(self, buffers):
-        buffers[0].line(
-            [(10, 95), (self.screen_size[0] - 10, 97)])
-
-    def _draw_frames(self, buffers):
-        if self.digital:
-            self._draw_digital_frame(buffers)
-        else:
-            self._draw_analog_frame(buffers)
+    def _draw_frame(self):
+        if (self.weather.state == self.weather.DEFAULT):
+            self.display.line(
+                (10, 97), (self.display.screen_size[0] - 10, 97), self.display.BLACK)
