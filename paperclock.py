@@ -30,52 +30,70 @@ import datetime
 import threading
 import traceback
 
-from display import Display
+from display import Display, Layout
 from openweathermap import OpenWeatherMap, Position
 from intervals import repeating
 
 
-def redraw_display(display):
-    """Draws display"""
-    display.show()
+class Controller:
+    def __init__(self, settings: Settings):
+        display = Display(settings)
 
-def get_forecast(display, openweathermap, settings):
-    try:
-        print('getting new forecast')
-        weather = openweathermap.query(
-            Position(settings.position['lat'], settings.position['lon']), settings.get('units', 'metric'))
-        if weather is not None:
-            display.update_weather(weather)
-    except Exception as ex:
-        print(f'Failed to update weather: {ex}')
-        traceback.print_exc(ex)
+        self.button1 = Button(5)
+        self.button2 = Button(6)
+        self.button3 = Button(13)
+        self.button4 = Button(19)
 
+        self.button1.when_pressed = self.button1pressed
 
-@repeating(lambda: 120 - datetime.datetime.now().second)
-def refresh_display(display):
-    redraw_display(display)
+        self.settings = settings
+        self.layout = Layout(display, settings)
+        if settings.openweathermap_api_key is not None:
+            self.openweathermap = OpenWeatherMap(
+                settings.openweathermap_api_key)
+            self.get_forecast()
 
+    def run(self):
+        self.refresh_display()
+        self.update_weather()
 
-@repeating(lambda: 15*60)
-def update_weather(display, openweathermap, settings):
-    get_forecast(display, openweathermap, settings)
+        def dummy_thread():
+            while True:
+                time.sleep(15)
 
+        threading.Thread(target=dummy_thread).start()  # keep app alive
 
-def dummy_thread():
-    while True:
-        time.sleep(15)
+    def button1pressed(self):
+        print("button 1 pressed")
+        self.layout.weather.set_state(self.layout.weather.CURRENT_DETAILS)
+        self.layout.draw()
+
+    def get_forecast(self):
+        try:
+            print('getting new forecast')
+            weather = self.openweathermap.query(
+                Position(self.settings.position['lat'], self.settings.position['lon']), self.settings.get('units', 'metric'))
+            if weather is not None:
+                self.layout.weather.update(weather)
+        except Exception as ex:
+            print(f'Failed to update weather: {ex}')
+            traceback.print_exc(ex)
+
+    def redraw_display(self):
+        """Draws display"""
+        self.layout.draw()
+
+    @repeating(lambda: 120 - datetime.datetime.now().second)
+    def refresh_display(self):
+        self.redraw_display()
+
+    @repeating(lambda: 15*60)
+    def update_weather(self):
+        self.get_forecast()
 
 
 if __name__ == '__main__':
 
-    settings = Settings()
+    controller = Controller(Settings())
 
-    display = Display(settings)
-    weather = OpenWeatherMap(
-        settings.openweathermap_api_key) if settings.openweathermap_api_key is not None else None
-    get_forecast(display, weather, settings)
-
-    refresh_display(display)
-    update_weather(display, weather, settings)
-
-    threading.Thread(target=dummy_thread).start()  # keep app alive
+    controller.run()
